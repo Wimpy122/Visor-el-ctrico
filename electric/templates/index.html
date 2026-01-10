@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Energía Chile</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body { margin: 0; display: flex; height: 100vh; font-family: sans-serif; }
+        #sidebar { width: 350px; padding: 20px; background: #f4f4f4; border-right: 1px solid #ccc; overflow-y: auto; }
+        #map { flex: 1; background: #aadaff; } /* Color océano */
+        .card { background: white; padding: 15px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body>
+
+    <div id="sidebar">
+        <h2>Sistema Eléctrico Nacional</h2>
+        <div id="info-panel" class="card">
+            <p>Selecciona una región...</p>
+        </div>
+        <div class="card">
+            <canvas id="mixChart"></canvas>
+        </div>
+    </div>
+
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+<script>
+    // 1. INICIAR MAPA
+    var map = L.map('map').setView([-35.6751, -71.543], 4); 
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '©OpenStreetMap, ©CartoDB'
+    }).addTo(map);
+
+    var datosEnergia = {};
+    var graficoActual = null;
+
+    // 2. DICCIONARIO LITERAL (Copia exacta del nombre en el mapa -> Código en tu DB)
+    // Si algún nombre falla, avísame cuál es exactamente.
+    const MAPEO_EXACTO = {
+        "Región de Arica y Parinacota": "CL-AP",
+        "Región de Tarapacá": "CL-TA",
+        "Región de Antofagasta": "CL-AN",
+        "Región de Atacama": "CL-AT",
+        "Región de Coquimbo": "CL-CO",
+        "Región de Valparaíso": "CL-VS",
+        "Región Metropolitana de Santiago": "CL-RM",
+        "Región Metropolitana": "CL-RM", // Por si acaso
+        "Región del Libertador Bernardo O'Higgins": "CL-LI",
+        "Región del Maule": "CL-ML",
+        "Región de Ñuble": "CL-NB",
+        "Región del Biobío": "CL-BI",
+        "Región del Bío-Bío": "CL-BI", // Variación con tilde
+        "Región de La Araucanía": "CL-AR",
+        "Región de Los Ríos": "CL-LR",
+        "Región de Los Lagos": "CL-LL",
+        "Región de Aysén del Gral.Ibañez del Campo": "CL-AI",
+        "Región de Aysén": "CL-AI",
+        "Región de Magallanes y Antártica Chilena": "CL-MA",
+        "Región de Magallanes": "CL-MA"
+    };
+
+    function obtenerCodigo(props) {
+        // Usamos la clave "Region" que ya confirmaste
+        var nombreEnMapa = props.Region; 
+        
+        // Buscamos directamente en el diccionario
+        var codigo = MAPEO_EXACTO[nombreEnMapa];
+        
+        // DEPURACIÓN: Si no lo encuentra, lo mostramos en la consola del navegador
+        if (!codigo) {
+            console.warn("⚠️ NO ENCONTRADO EN DICCIONARIO:", nombreEnMapa);
+        }
+        return codigo;
+    }
+
+    // 3. CARGA DE DATOS
+    fetch('/api/datos')
+        .then(res => res.json())
+        .then(data => {
+            datosEnergia = data;
+            console.log("Datos Django recibidos:", data); // Check para ti
+            return fetch('/static/geojson/chile_regiones.json');
+        })
+        .then(res => res.json())
+        .then(geoData => {
+            L.geoJson(geoData, {
+                style: styleRegion,
+                onEachFeature: onEachFeature
+            }).addTo(map);
+        })
+        .catch(err => console.error("Error grave:", err));
+
+    // 4. ESTILOS
+    function styleRegion(feature) {
+        var codigo = obtenerCodigo(feature.properties);
+        var datos = datosEnergia[codigo];
+
+        return {
+            fillColor: datos ? getColor(datos.co2) : '#cccccc', // Gris si falla
+            weight: 1,
+            opacity: 1,
+            color: 'white',
+            fillOpacity: 0.7
+        };
+    }
+
+    function getColor(co2) {
+        return co2 > 400 ? '#3e0a0e' : 
+               co2 > 300 ? '#9e2126' : 
+               co2 > 200 ? '#d66b27' : 
+               co2 > 100 ? '#e6b545' : 
+                           '#6bbf62'; 
+    }
+
+    function onEachFeature(feature, layer) {
+        layer.on({
+            click: function(e) {
+                actualizarSidebar(feature.properties);
+            }
+        });
+    }
+
+// 5. SIDEBAR MEJORADO
+function actualizarSidebar(props) {
+    var codigoRaw = obtenerCodigo(props);
+    var codigo = codigoRaw ? codigoRaw.trim() : null;
+
+    var datos = datosEnergia[codigo];
+    var contenedor = document.getElementById('info-panel');
+    var nombre = props.Region;
+
+    if (!datos) {
+        contenedor.innerHTML = `
+            <h3>${nombre}</h3>
+            <p style="color:red">No hay datos disponibles.</p>
+        `;
+        if (graficoActual) graficoActual.destroy();
+        return;
+    }
+
+    // --- MEJORA 1 y 2: EXTRAER VALORES, CALCULAR TOTAL Y REDONDEAR ---
+    // Extraemos valores asegurando que sean números (|| 0 por si alguno viene nulo)
+    var solar = datos.mix.solar || 0;
+    var eolica = datos.mix.eolica || 0;
+    var hidro = datos.mix.hidro || 0;
+    var termo = datos.mix.termo || 0;
+
+    // Calculamos el total sumando todo
+    var totalMW = solar + eolica + hidro + termo;
+
+    // Obtenemos la intensidad (o co2)
+    var valorCO2 = datos.intensidad || datos.co2 || 0;
+
+    // Renderizamos HTML usando .toFixed(1) para redondear a 1 decimal
+    contenedor.innerHTML = `
+        <h3>${nombre}</h3>
+        <div style="font-size: 2em; font-weight: bold; color: ${getColor(valorCO2)}">
+            ${Math.round(valorCO2)} <span style="font-size:0.5em; color:black">gCO2/kWh</span>
+        </div>
+        <p><strong>Generación Total:</strong> ${totalMW.toFixed(1)} MW</p>
+        <hr>
+    `;
+
+    var ctx = document.getElementById('mixChart').getContext('2d');
+    if (graficoActual) graficoActual.destroy();
+
+    graficoActual = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Solar', 'Eólica', 'Hidro', 'Térmica'],
+            datasets: [{
+                // Usamos las variables que definimos arriba
+                data: [solar, eolica, hidro, termo],
+                backgroundColor: ['#f1c40f', '#2ecc71', '#3498db', '#5c5c5c'],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'bottom' },
+                // --- MEJORA 3: TOOLTIP CON PORCENTAJES ---
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            var label = context.label || '';
+                            var value = context.raw;
+                            // Calculamos el porcentaje sobre el total que ya calculamos antes
+                            var porcentaje = ((value / totalMW) * 100).toFixed(1) + '%';
+                            return ` ${label}: ${value.toFixed(1)} MW (${porcentaje})`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+</script>
+</body>
+</html>
