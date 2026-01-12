@@ -9,17 +9,86 @@
     <style>
         body { margin: 0; display: flex; height: 100vh; font-family: sans-serif; }
         #sidebar { width: 350px; padding: 20px; background: #f4f4f4; border-right: 1px solid #ccc; overflow-y: auto; }
-        #map { flex: 1; background: #aadaff; } /* Color océano */
+        #map { flex: 1; background: #aadaff; }
         .card { background: white; padding: 15px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+
+        /* --- AGREGA ESTO AQUÍ --- */
+        
+        /* Estilo del Contenedor del Toggle */
+        .toggle-container {
+            background-color: #e0e0e0; 
+            border-radius: 25px;       
+            padding: 4px;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;       
+            margin-top: 10px;
+        }
+
+        /* Botones inactivos */
+        .toggle-btn {
+            flex: 1;                   
+            border: none;
+            background: transparent;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-weight: 600;
+            color: #666;               
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        /* Botón ACTIVO */
+        .toggle-btn.active {
+            background-color: #fff;    
+            color: #0d6e42;            
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1); 
+        }
+
+        /* Ocultar/Mostrar pestañas */
+        .tab-content { display: none; }
+        .tab-content.active { display: block; animation: fadeIn 0.4s; }
+        
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     </style>
 </head>
 <body>
 
     <div id="sidebar">
-        <h2>Sistema Eléctrico Nacional</h2>
-        <div id="info-panel" class="card">
-            <p>Selecciona una región...</p>
+        <img src="static/img/logo_libre.png" alt="Logo Libre" style="max-width: 100%; height: auto;">
+        <div id="sidebar-container" style="padding: 15px;">
+    
+    <div id="sidebar-header">
+        <h3 style="margin-top:0;">Seleccione una subestación</h3>
+    </div>
+
+    <div class="toggle-container">
+        <button id="btn-elec" class="toggle-btn active" onclick="cambiarPestana('elec')">
+            Electricidad
+        </button>
+        <button id="btn-emis" class="toggle-btn" onclick="cambiarPestana('emis')">
+            Emisiones
+        </button>
+    </div>
+
+    <div id="view-elec" class="tab-content active">
+        <div id="elec-placeholder">
+            <p>Haga clic en un marcador para ver datos.</p>
         </div>
+        <div id="chart-container" style="height: 300px; display: none;">
+            <canvas id="chartCMg"></canvas>
+        </div>
+        <div id="elec-details"></div>
+    </div>
+
+    <div id="view-emis" class="tab-content">
+        <div style="text-align: center; padding: 20px; color: #888;">
+            <img src="https://cdn-icons-png.flaticon.com/512/2867/2867306.png" width="50" style="opacity: 0.5">
+            <p>Próximamente: Datos de Emisiones</p>
+        </div>
+    </div>
+
+</div>
         <div class="card">
             <canvas id="mixChart"></canvas>
         </div>
@@ -29,176 +98,152 @@
 
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
 <script>
-    // 1. INICIAR MAPA
-    var map = L.map('map').setView([-35.6751, -71.543], 4); 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        attribution: '©OpenStreetMap, ©CartoDB'
-    }).addTo(map);
+    // ---------------------------------------------------------
+    // 1. CONFIGURACIÓN DEL MAPA
+    // ---------------------------------------------------------
+    var capaClaro = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution: '©OpenStreetMap, ©CartoDB' });
+    var capaSatelite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: 'Tiles © Esri' });
 
-    var datosEnergia = {};
-    var graficoActual = null;
+    var limitesChile = [[-60.0, -85.0], [-15.0, -60.0]];
 
-    // 2. DICCIONARIO LITERAL (Copia exacta del nombre en el mapa -> Código en tu DB)
-    // Si algún nombre falla, avísame cuál es exactamente.
-    const MAPEO_EXACTO = {
-        "Región de Arica y Parinacota": "CL-AP",
-        "Región de Tarapacá": "CL-TA",
-        "Región de Antofagasta": "CL-AN",
-        "Región de Atacama": "CL-AT",
-        "Región de Coquimbo": "CL-CO",
-        "Región de Valparaíso": "CL-VS",
-        "Región Metropolitana de Santiago": "CL-RM",
-        "Región Metropolitana": "CL-RM", // Por si acaso
-        "Región del Libertador Bernardo O'Higgins": "CL-LI",
-        "Región del Maule": "CL-ML",
-        "Región de Ñuble": "CL-NB",
-        "Región del Biobío": "CL-BI",
-        "Región del Bío-Bío": "CL-BI", // Variación con tilde
-        "Región de La Araucanía": "CL-AR",
-        "Región de Los Ríos": "CL-LR",
-        "Región de Los Lagos": "CL-LL",
-        "Región de Aysén del Gral.Ibañez del Campo": "CL-AI",
-        "Región de Aysén": "CL-AI",
-        "Región de Magallanes y Antártica Chilena": "CL-MA",
-        "Región de Magallanes": "CL-MA"
-    };
+    var map = L.map('map', {
+        center: [-33.45, -70.66], 
+        zoom: 8,
+        minZoom: 5,
+        maxBounds: limitesChile,
+        maxBoundsViscosity: 1.0,
+        layers: [capaSatelite] 
+    });
 
-    function obtenerCodigo(props) {
-        // Usamos la clave "Region" que ya confirmaste
-        var nombreEnMapa = props.Region; 
-        
-        // Buscamos directamente en el diccionario
-        var codigo = MAPEO_EXACTO[nombreEnMapa];
-        
-        // DEPURACIÓN: Si no lo encuentra, lo mostramos en la consola del navegador
-        if (!codigo) {
-            console.warn("⚠️ NO ENCONTRADO EN DICCIONARIO:", nombreEnMapa);
-        }
-        return codigo;
+    var baseMaps = { "Mapa Claro": capaClaro, "Satélite": capaSatelite };
+    L.control.layers(baseMaps).addTo(map);
+
+    // --- VARIABLES GLOBALES ---
+    var graficoActual = null; 
+    const API_BASE = "http://186.64.120.248:8000/api/v1";
+    var todosLosMarcadores = [];
+
+    // ---------------------------------------------------------
+    // 2. FUNCIÓN PARA CAMBIAR PESTAÑAS (NUEVO)
+    // ---------------------------------------------------------
+    function cambiarPestana(tabName) {
+        // Quitar active a todos
+        document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+        // Poner active al seleccionado
+        document.getElementById('btn-' + tabName).classList.add('active');
+        document.getElementById('view-' + tabName).classList.add('active');
     }
 
-    // 3. CARGA DE DATOS
-    fetch('/api/datos')
-        .then(res => res.json())
-        .then(data => {
-            datosEnergia = data;
-            console.log("Datos Django recibidos:", data); // Check para ti
-            return fetch('/static/geojson/chile_regiones.json');
+    // ---------------------------------------------------------
+    // 3. CARGAR SUBESTACIONES
+    // ---------------------------------------------------------
+    var rutaIcono = '/static/img/iconos_energ_2.svg';
+    
+    var iconMini = L.icon({ iconUrl: rutaIcono, iconSize: [5, 8], iconAnchor: [2, 8] });
+    var iconMedio = L.icon({ iconUrl: rutaIcono, iconSize: [12, 20], iconAnchor: [6, 20], popupAnchor: [1, -15] });
+    var iconNormal = L.icon({ iconUrl: rutaIcono, iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34] });
+
+    fetch(`${API_BASE}/bus`)
+        .then(response => response.json())
+        .then(listaSubestaciones => {
+            console.log("Subestaciones cargadas:", listaSubestaciones.length);
+            listaSubestaciones.forEach(bus => {
+                if (bus.lat && bus.lon) {
+                    var marker = L.marker([bus.lat, bus.lon], { icon: iconMini }).addTo(map);
+                    marker.bindTooltip(bus.nombre);
+                    marker.on('click', () => { cargarDatosCMg(bus.id, bus.nombre); });
+                    todosLosMarcadores.push(marker);
+                }
+            });
+            actualizarTamanoMarcadores();
         })
-        .then(res => res.json())
-        .then(geoData => {
-            L.geoJson(geoData, {
-                style: styleRegion,
-                onEachFeature: onEachFeature
-            }).addTo(map);
-        })
-        .catch(err => console.error("Error grave:", err));
+        .catch(err => console.error("Error cargando buses:", err));
 
-    // 4. ESTILOS
-    function styleRegion(feature) {
-        var codigo = obtenerCodigo(feature.properties);
-        var datos = datosEnergia[codigo];
+    // ZOOM DINÁMICO
+    map.on('zoomend', function() { actualizarTamanoMarcadores(); });
 
-        return {
-            fillColor: datos ? getColor(datos.co2) : '#cccccc', // Gris si falla
-            weight: 1,
-            opacity: 1,
-            color: 'white',
-            fillOpacity: 0.7
-        };
+    function actualizarTamanoMarcadores() {
+        var zoomActual = map.getZoom();
+        var iconNuevos;
+        if (zoomActual < 6) iconNuevos = iconMini;
+        else if (zoomActual >= 6 && zoomActual < 10) iconNuevos = iconMedio;
+        else iconNuevos = iconNormal;
+
+        todosLosMarcadores.forEach(marker => { marker.setIcon(iconNuevos); });
     }
 
-    function getColor(co2) {
-        return co2 > 400 ? '#3e0a0e' : 
-               co2 > 300 ? '#9e2126' : 
-               co2 > 200 ? '#d66b27' : 
-               co2 > 100 ? '#e6b545' : 
-                           '#6bbf62'; 
+    // ---------------------------------------------------------
+    // 4. CARGAR DATOS (MODIFICADO PARA NO BORRAR BOTONES)
+    // ---------------------------------------------------------
+    function cargarDatosCMg(id, nombreSubestacion) {
+        // 1. Actualizamos el Título sin borrar el HTML
+        var titulo = document.querySelector('#sidebar-header h3');
+        if(titulo) titulo.innerText = nombreSubestacion;
+
+        // 2. Indicamos carga en la zona de detalles
+        var detalles = document.getElementById('elec-details');
+        detalles.innerHTML = '<small>Cargando datos...</small>';
+
+        // 3. Llamada API
+        fetch(`${API_BASE}/cmg?id=${id}`)
+            .then(res => res.json())
+            .then(data => {
+                dibujarGrafico(data);
+            })
+            .catch(err => {
+                console.error(err);
+                detalles.innerHTML = `<p style="color:red">Error cargando datos para ID ${id}</p>`;
+            });
     }
 
-    function onEachFeature(feature, layer) {
-        layer.on({
-            click: function(e) {
-                actualizarSidebar(feature.properties);
+    // ---------------------------------------------------------
+    // 5. DIBUJAR GRÁFICO (MODIFICADO)
+    // ---------------------------------------------------------
+    function dibujarGrafico(dataApi) {
+        // Ocultar placeholder ("Haga clic en...")
+        document.getElementById('elec-placeholder').style.display = 'none';
+        
+        // Mostrar contenedor del gráfico
+        document.getElementById('chart-container').style.display = 'block';
+
+        // Actualizar texto de unidad
+        document.getElementById('elec-details').innerHTML = `<small></small>`;
+
+        var ctx = document.getElementById('chartCMg').getContext('2d');
+
+        if (graficoActual) { graficoActual.destroy(); }
+
+        graficoActual = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: dataApi.date,
+                datasets: [{
+                    label: 'Costo Marginal (USD/MWh)',
+                    data: dataApi.cmg,
+                    borderColor: '#e74c3c',
+                    backgroundColor: 'rgba(231, 76, 60, 0.2)',
+                    borderWidth: 2,
+                    pointRadius: 3,
+                    fill: true,
+                    tension: 0.3
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'top' },
+                    tooltip: { mode: 'index', intersect: false }
+                },
+                scales: {
+                    x: { display: true, title: { display: true, text: 'Fecha' } },
+                    y: { display: true, title: { display: true, text: 'USD/MWh' }, beginAtZero: true }
+                }
             }
         });
     }
-
-// 5. SIDEBAR MEJORADO
-function actualizarSidebar(props) {
-    var codigoRaw = obtenerCodigo(props);
-    var codigo = codigoRaw ? codigoRaw.trim() : null;
-
-    var datos = datosEnergia[codigo];
-    var contenedor = document.getElementById('info-panel');
-    var nombre = props.Region;
-
-    if (!datos) {
-        contenedor.innerHTML = `
-            <h3>${nombre}</h3>
-            <p style="color:red">No hay datos disponibles.</p>
-        `;
-        if (graficoActual) graficoActual.destroy();
-        return;
-    }
-
-    // --- MEJORA 1 y 2: EXTRAER VALORES, CALCULAR TOTAL Y REDONDEAR ---
-    // Extraemos valores asegurando que sean números (|| 0 por si alguno viene nulo)
-    var solar = datos.mix.solar || 0;
-    var eolica = datos.mix.eolica || 0;
-    var hidro = datos.mix.hidro || 0;
-    var termo = datos.mix.termo || 0;
-
-    // Calculamos el total sumando todo
-    var totalMW = solar + eolica + hidro + termo;
-
-    // Obtenemos la intensidad (o co2)
-    var valorCO2 = datos.intensidad || datos.co2 || 0;
-
-    // Renderizamos HTML usando .toFixed(1) para redondear a 1 decimal
-    contenedor.innerHTML = `
-        <h3>${nombre}</h3>
-        <div style="font-size: 2em; font-weight: bold; color: ${getColor(valorCO2)}">
-            ${Math.round(valorCO2)} <span style="font-size:0.5em; color:black">gCO2/kWh</span>
-        </div>
-        <p><strong>Generación Total:</strong> ${totalMW.toFixed(1)} MW</p>
-        <hr>
-    `;
-
-    var ctx = document.getElementById('mixChart').getContext('2d');
-    if (graficoActual) graficoActual.destroy();
-
-    graficoActual = new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-            labels: ['Solar', 'Eólica', 'Hidro', 'Térmica'],
-            datasets: [{
-                // Usamos las variables que definimos arriba
-                data: [solar, eolica, hidro, termo],
-                backgroundColor: ['#f1c40f', '#2ecc71', '#3498db', '#5c5c5c'],
-                borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: true,
-            plugins: {
-                legend: { position: 'bottom' },
-                // --- MEJORA 3: TOOLTIP CON PORCENTAJES ---
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            var label = context.label || '';
-                            var value = context.raw;
-                            // Calculamos el porcentaje sobre el total que ya calculamos antes
-                            var porcentaje = ((value / totalMW) * 100).toFixed(1) + '%';
-                            return ` ${label}: ${value.toFixed(1)} MW (${porcentaje})`;
-                        }
-                    }
-                }
-            }
-        }
-    });
-}
 </script>
 </body>
 </html>
