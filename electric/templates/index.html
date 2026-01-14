@@ -5,96 +5,212 @@
     <title>Energía Chile</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 
     <style>
-        body { margin: 0; display: flex; height: 100vh; font-family: sans-serif; }
-        #sidebar { width: 350px; padding: 20px; background: #f4f4f4; border-right: 1px solid #ccc; overflow-y: auto; }
-        #map { flex: 1; background: #aadaff; }
-        .card { background: white; padding: 15px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    :root {
+        --primary-green: #2e7d32; /* Verde oscuro tipo Electricity Maps */
+        --bg-light: #f4f4f4;
+        --text-dark: #333;
+    }
 
-        /* --- AGREGA ESTO AQUÍ --- */
-        
-        /* Estilo del Contenedor del Toggle */
-        .toggle-container {
-            background-color: #e0e0e0; 
-            border-radius: 25px;       
-            padding: 4px;
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 20px;       
-            margin-top: 10px;
-        }
+    body { margin: 0; display: flex; height: 100vh; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: var(--text-dark); }
+    
+    /* SIDEBAR */
+    #sidebar { 
+        width: 400px; 
+        background: white; 
+        border-right: 1px solid #ddd; 
+        display: flex; 
+        flex-direction: column;
+        box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+        z-index: 1000;
+    }
 
-        /* Botones inactivos */
-        .toggle-btn {
-            flex: 1;                   
-            border: none;
-            background: transparent;
-            padding: 8px 15px;
-            border-radius: 20px;
-            font-weight: 600;
-            color: #666;               
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
+    /* HEADER */
+    .sidebar-header {
+        padding: 15px 20px;
+        display: flex;
+        align-items: center;
+        border-bottom: 1px solid #eee;
+    }
+    .back-btn { margin-right: 15px; cursor: pointer; font-size: 1.2em; color: #666; }
+    .header-title { font-weight: bold; font-size: 1.1em; flex: 1; }
 
-        /* Botón ACTIVO */
-        .toggle-btn.active {
-            background-color: #fff;    
-            color: #0d6e42;            
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1); 
-        }
+    /* CONTENIDO CON SCROLL */
+    .sidebar-content {
+        padding: 20px;
+        overflow-y: auto;
+        flex: 1;
+    }
 
-        /* Ocultar/Mostrar pestañas */
-        .tab-content { display: none; }
-        .tab-content.active { display: block; animation: fadeIn 0.4s; }
-        
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-    </style>
+    /* TOGGLE (Interruptor) */
+    .toggle-container {
+        background-color: #eee;
+        border-radius: 20px;
+        padding: 4px;
+        display: flex;
+        margin-bottom: 25px;
+    }
+    .toggle-btn {
+        flex: 1;
+        border: none;
+        background: transparent;
+        padding: 6px;
+        border-radius: 16px;
+        font-weight: 600;
+        font-size: 0.9em;
+        color: #666;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .toggle-btn.active {
+        background-color: white;
+        color: var(--primary-green);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    /* RESUMEN (LOS 3 CÍRCULOS) */
+    .summary-stats {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 30px;
+        text-align: center;
+    }
+    .stat-item { flex: 1; display: flex; flex-direction: column; align-items: center; }
+    
+    /* Círculo relleno (Intensidad) */
+    .circle-filled {
+        width: 60px; height: 60px;
+        background-color: #8bc34a; /* Verde claro */
+        border-radius: 50%;
+        display: flex; justify-content: center; align-items: center;
+        flex-direction: column;
+        color: #1a4d1a;
+        font-weight: bold;
+        margin-bottom: 8px;
+    }
+    
+    /* Círculo borde (Porcentajes) */
+    .circle-border {
+        width: 54px; height: 54px;
+        border: 3px solid #8bc34a;
+        border-radius: 50%;
+        display: flex; justify-content: center; align-items: center;
+        font-weight: bold;
+        color: #333;
+        margin-bottom: 8px;
+    }
+    
+    .stat-label { font-size: 0.75em; color: #666; line-height: 1.2; max-width: 80px; }
+    .unit { font-size: 0.7em; font-weight: normal; }
+
+    /* GRÁFICO */
+    .chart-section h4 { margin: 0 0 10px 0; font-size: 1em; color: #333; }
+    .chart-wrapper { height: 250px; width: 100%; position: relative; }
+
+    /* LISTA DE TECNOLOGÍAS (ESTILO TABLA) */
+    .tech-list { margin-top: 20px; font-size: 0.9em; }
+    .tech-item {
+        display: flex;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px solid #f0f0f0;
+    }
+    .tech-icon { margin-right: 10px; width: 20px; text-align: center; }
+    .tech-name { flex: 1; }
+    .tech-val { font-weight: bold; color: #666; }
+
+    /* MAPA */
+    #map { flex: 1; background: #aadaff; }
+    
+    /* PESTAÑAS */
+    .tab-content { display: none; }
+    .tab-content.active { display: block; animation: fadeIn 0.3s; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+</style>
 </head>
 <body>
 
     <div id="sidebar">
-        <img src="static/img/logo_libre.png" alt="Logo Libre" style="max-width: 100%; height: auto;">
-        <div id="sidebar-container" style="padding: 15px;">
-    
-    <div id="sidebar-header">
-        <h3 style="margin-top:0;">Seleccione una subestación</h3>
-    </div>
-
-    <div class="toggle-container">
-        <button id="btn-elec" class="toggle-btn active" onclick="cambiarPestana('elec')">
-            Electricidad
-        </button>
-        <button id="btn-emis" class="toggle-btn" onclick="cambiarPestana('emis')">
-            Emisiones
-        </button>
-    </div>
-
-    <div id="view-elec" class="tab-content active">
-        <div id="elec-placeholder">
-            <p>Haga clic en un marcador para ver datos.</p>
-        </div>
-        <div id="chart-container" style="height: 300px; display: none;">
-            <canvas id="chartCMg"></canvas>
-        </div>
-        <div id="elec-details"></div>
-    </div>
-
-    <div id="view-emis" class="tab-content">
-        <div style="text-align: center; padding: 20px; color: #888;">
-            <img src="https://cdn-icons-png.flaticon.com/512/2867/2867306.png" width="50" style="opacity: 0.5">
-            <p>Próximamente: Datos de Emisiones</p>
-        </div>
-    </div>
-
+    <div class="sidebar-header">
+        <div class="header-title" id="header-title-text" style="display: flex; align-items: center;">
+    <img src="https://cdn-icons-png.flaticon.com/512/197/197586.png" 
+         alt="Chile Flag" 
+         style="width: 24px; height: 24px; margin-right: 10px; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+         
+    Sistema Eléctrico Nacional
 </div>
-        <div class="card">
-            <canvas id="mixChart"></canvas>
-        </div>
+        
     </div>
 
-    <div id="map"></div>
+    <div class="sidebar-content">
+        <div class="toggle-container">
+            <button id="btn-elec" class="toggle-btn active" onclick="cambiarPestana('elec')">Electricidad</button>
+            <button id="btn-emis" class="toggle-btn" onclick="cambiarPestana('emis')">Emisiones</button>
+        </div>
+
+        <div id="view-elec" class="tab-content active">
+            
+            <div class="summary-stats">
+                <div class="stat-item">
+                    <div class="circle-filled">
+                        <span>--</span>
+                        <span class="unit">gCO₂</span>
+                    </div>
+                    <span class="stat-label">Intensidad de carbono</span>
+                </div>
+                <div class="stat-item">
+                    <div class="circle-border">--%</div>
+                    <span class="stat-label">Baja en emisiones</span>
+                </div>
+                <div class="stat-item">
+                    <div class="circle-border" style="border-color: #009688;">--%</div>
+                    <span class="stat-label">Renovables</span>
+                </div>
+            </div>
+
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+
+            <div class="chart-section">
+                <h4 id="chart-title">Costo Marginal (Histórico)</h4>
+    
+                <div id="zoom-container" style="display:none; align-items: center; margin-bottom: 10px; font-size: 0.8em; color: #666;">
+                    <span style="margin-right: 10px;">Mensual</span>
+                    <input type="range" id="timeSlider" min="0" max="100" value="100" style="flex: 1; cursor: pointer;">
+                    <span style="margin-left: 10px;">Hora</span>
+                </div>
+
+                <div id="elec-placeholder" style="text-align: center; padding: 40px; color: #999;">
+                    <p>Selecciona una subestación en el mapa</p>
+                </div>
+                
+                <div id="chart-container" class="chart-wrapper" style="display: none;">
+                    <canvas id="chartCMg"></canvas>
+                </div>
+                <div id="elec-details" style="text-align: right; font-size: 0.8em; color: #888; margin-top: 5px;"></div>
+            </div>
+
+            <div class="tech-list">
+                <div style="font-weight: bold; margin-bottom: 10px; font-size: 0.85em; color: #888;">CAPACIDAD INSTALADA (Ejemplo)</div>
+                <div class="tech-item"><span class="tech-icon">☀️</span> <span class="tech-name">Solar</span> <span class="tech-val">--</span></div>
+                <div class="tech-item"><span class="tech-icon">🌬️</span> <span class="tech-name">Eólica</span> <span class="tech-val">--</span></div>
+                <div class="tech-item"><span class="tech-icon">💧</span> <span class="tech-name">Hidroeléctrica</span> <span class="tech-val">--</span></div>
+                <div class="tech-item"><span class="tech-icon">🔥</span> <span class="tech-name">Térmica</span> <span class="tech-val">--</span></div>
+            </div>
+
+        </div>
+
+        <div id="view-emis" class="tab-content">
+            <div style="text-align: center; padding: 50px; color: #888;">
+                <p>Próximamente: Datos de Emisiones</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="map"></div>
 
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
 <script>
@@ -179,7 +295,7 @@
     // ---------------------------------------------------------
     function cargarDatosCMg(id, nombreSubestacion) {
         // 1. Actualizamos el Título sin borrar el HTML
-        var titulo = document.querySelector('#sidebar-header h3');
+        var titulo = document.getElementById('header-title-text').innerText;
         if(titulo) titulo.innerText = nombreSubestacion;
 
         // 2. Indicamos carga en la zona de detalles
@@ -201,48 +317,144 @@
     // ---------------------------------------------------------
     // 5. DIBUJAR GRÁFICO (MODIFICADO)
     // ---------------------------------------------------------
-    function dibujarGrafico(dataApi) {
-        // Ocultar placeholder ("Haga clic en...")
-        document.getElementById('elec-placeholder').style.display = 'none';
-        
-        // Mostrar contenedor del gráfico
-        document.getElementById('chart-container').style.display = 'block';
+    // Variable para guardar los datos originales completos de la API
+    var datosCompletosAPI = null;
 
-        // Actualizar texto de unidad
-        document.getElementById('elec-details').innerHTML = `<small></small>`;
+    function dibujarGrafico(dataApi) {
+        // 1. Mostrar contenedores
+        document.getElementById('elec-placeholder').style.display = 'none';
+        document.getElementById('chart-container').style.display = 'block';
+        document.getElementById('zoom-container').style.display = 'flex'; 
+        
+        document.getElementById('elec-details').innerHTML = `<small>Unidad: ${dataApi.y_unit} / ${dataApi.x_unit}</small>`;
+
+        // 2. Procesar datos (Timestamp)
+        datosCompletosAPI = dataApi.date.map((fecha, i) => ({
+            x: new Date(fecha).getTime(), 
+            y: dataApi.cmg[i]
+        }));
+
+        // --- CAMBIO 1: CALCULAR EL TECHO DEL EJE Y ---
+        // Buscamos el valor más alto en todo el historial
+        var valorMaximo = Math.max(...dataApi.cmg);
+        
+        // Le agregamos un 20% extra y redondeamos hacia arriba
+        // Esto evita que la línea toque el borde superior
+        var techoEjeY = Math.ceil(valorMaximo * 1.2);
 
         var ctx = document.getElementById('chartCMg').getContext('2d');
+        if (graficoActual) graficoActual.destroy();
 
-        if (graficoActual) { graficoActual.destroy(); }
-
+        // 3. Configuración del gráfico
         graficoActual = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: dataApi.date,
                 datasets: [{
-                    label: 'Costo Marginal (USD/MWh)',
-                    data: dataApi.cmg,
-                    borderColor: '#e74c3c',
-                    backgroundColor: 'rgba(231, 76, 60, 0.2)',
+                    label: 'Costo Marginal',
+                    data: datosCompletosAPI, 
+                    borderColor: '#2e7d32',  
+                    backgroundColor: 'rgba(46, 125, 50, 0.1)',
                     borderWidth: 2,
-                    pointRadius: 3,
+                    pointRadius: 0,          
+                    pointHoverRadius: 4,
                     fill: true,
-                    tension: 0.3
+                    tension: 0.2             
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                animation: { duration: 600, easing: 'easeOutQuart' },
+                interaction: { mode: 'nearest', axis: 'x', intersect: false },
                 plugins: {
-                    legend: { position: 'top' },
-                    tooltip: { mode: 'index', intersect: false }
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: 'rgba(255, 255, 255, 0.9)', 
+                        titleColor: '#333',
+                        bodyColor: '#333',
+                        borderColor: '#ddd',
+                        borderWidth: 1,
+                        callbacks: {
+                            title: function(context) {
+                                const date = new Date(context[0].parsed.x);
+                                return date.toLocaleString('es-CL', { month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit'});
+                            }
+                        }
+                    }
                 },
                 scales: {
-                    x: { display: true, title: { display: true, text: 'Fecha' } },
-                    y: { display: true, title: { display: true, text: 'USD/MWh' }, beginAtZero: true }
+                    x: {
+                        type: 'time', 
+                        time: {
+                            displayFormats: {
+                                hour: 'HH:mm',
+                                day: 'd MMM',
+                                month: 'MMM yyyy'
+                            }
+                        },
+                        grid: { display: false, drawBorder: false },
+                        ticks: { 
+                            maxRotation: 0, autoSkip: true, maxTicksLimit: 6,
+                            color: '#999', font: { size: 11 }
+                        }
+                    },
+                    // --- CAMBIO 2: APLICAR EL TECHO AL EJE Y ---
+                    y: {
+                        beginAtZero: true,
+                        max: techoEjeY, // <--- Aquí forzamos el límite superior calculado
+                        grid: { color: '#f5f5f5' },
+                        ticks: { color: '#999', maxTicksLimit: 5 }
+                    }
                 }
             }
         });
+
+        // 4. Iniciar Slider
+        var slider = document.getElementById('timeSlider');
+        slider.value = 100; 
+        slider.oninput = function() { aplicarZoom(this.value); };
+        aplicarZoom(100);
+    }
+
+    // --- LÓGICA DEL ZOOM (Ajustada para cambiar formato de etiquetas) ---
+    function aplicarZoom(valorSlider) {
+        // Validación de seguridad
+        if (!graficoActual || !datosCompletosAPI || datosCompletosAPI.length === 0) return;
+
+        // 1. Obtener la fecha del ÚLTIMO dato disponible (el más reciente)
+        var ultimoPunto = datosCompletosAPI[datosCompletosAPI.length - 1];
+        var fechaFin = ultimoPunto.x; // Timestamp del final
+
+        // 2. Calcular cuántas HORAS queremos ver hacia atrás según el slider
+        // Si slider es 100 (Derecha) -> 24 horas
+        // Si slider es 0   (Izquierda) -> 720 horas (30 días)
+        // Usamos una interpolación lineal simple
+        var horasAVisualizar = 24 + (720 - 24) * ((100 - valorSlider) / 100);
+
+        // 3. Calcular la fecha de inicio restando esas horas a la fecha final
+        // (horas * 60 min * 60 seg * 1000 ms)
+        var fechaInicio = fechaFin - (horasAVisualizar * 60 * 60 * 1000);
+
+        // 4. Aplicar el rango al gráfico (Zoom suave)
+        graficoActual.options.scales.x.min = fechaInicio;
+        graficoActual.options.scales.x.max = fechaFin;
+
+        // 5. Ajustar etiquetas (Estilo Electricity Maps)
+        var timeScale = graficoActual.options.scales.x.time;
+
+        if (horasAVisualizar <= 48) { 
+            // Si vemos menos de 2 días -> MODO HORA
+            // Ej: 14:00, 15:00...
+            timeScale.unit = 'hour';
+            timeScale.displayFormats.hour = 'HH:mm'; 
+        } else {
+            // Si vemos más de 2 días -> MODO DÍA
+            // Ej: 13 Ene, 14 Ene...
+            timeScale.unit = 'day';
+            timeScale.displayFormats.day = 'd MMM'; 
+        }
+
+        graficoActual.update();
     }
 </script>
 </body>
