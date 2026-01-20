@@ -203,10 +203,54 @@
         </div>
 
         <div id="view-emis" class="tab-content">
-            <div style="text-align: center; padding: 50px; color: #888;">
-                <p>Próximamente: Datos de Emisiones</p>
-            </div>
+    
+    <div class="chart-section">
+        <h4 style="display:flex; align-items:center;">
+            <span style="font-size:1.2em; margin-right:8px;">🏭</span> 
+            <span id="title-emis-co2">Emisiones Totales (tCO₂)</span>
+        </h4>
+        
+        <div id="zoom-container-co2" style="display:none; align-items: center; margin-bottom: 10px; font-size: 0.8em; color: #666;">
+            <span id="inicio-tag-em" style="margin-right: 10px;">.</span>
+            <input type="range" id="sliderEmisCO2" min="0" max="100" value="100" style="flex: 1; cursor: pointer;">
+            <span id="fin-tag-em" style="margin-left: 10px;">.</span>
         </div>
+
+        <div id="placeholder-co2" style="text-align: center; padding: 30px; color: #999;">
+            <p>Cargando emisiones...</p>
+        </div>
+        
+        <div id="chart-box-co2" class="chart-wrapper" style="display: none; height: 250px;">
+            <canvas id="canvasEmisCO2"></canvas>
+        </div>
+        <div id="details-co2" style="text-align: right; font-size: 0.8em; color: #888;"></div>
+    </div>
+
+    <hr style="border: 0; border-top: 1px solid #eee; margin: 30px 0;">
+
+    <div class="chart-section">
+        <h4 style="display:flex; align-items:center;">
+            <span style="font-size:1.2em; margin-right:8px;">⚡</span> 
+            <span id="title-gen-real">Generación Real (MW)</span>
+        </h4>
+
+        <div id="zoom-container-gen" style="display:none; align-items: center; margin-bottom: 10px; font-size: 0.8em; color: #666;">
+            <span id="inicio-tag-ge" style="margin-right: 10px;">2024-08-01</span>
+            <input type="range" id="sliderGenReal" min="0" max="100" value="100" style="flex: 1; cursor: pointer;">
+            <span id="fin-tag-ge" style="margin-left: 10px;">Hora</span>
+        </div>
+
+        <div id="placeholder-gen" style="text-align: center; padding: 30px; color: #999;">
+            <p>Cargando generación...</p>
+        </div>
+        
+        <div id="chart-box-gen" class="chart-wrapper" style="display: none; height: 250px;">
+            <canvas id="canvasGenReal"></canvas>
+        </div>
+        <div id="details-gen" style="text-align: right; font-size: 0.8em; color: #888;"></div>
+    </div>
+
+</div>
     </div>
 </div>
 
@@ -334,6 +378,9 @@
             y: dataApi.cmg[i]
         }));
 
+
+        
+
         // --- CAMBIO 1: CALCULAR EL TECHO DEL EJE Y ---
         // Buscamos el valor más alto en todo el historial
         var valorMaximo = Math.max(...dataApi.cmg);
@@ -456,6 +503,218 @@
 
         graficoActual.update();
     }
+    // --- VARIABLES GLOBALES PARA LA PESTAÑA DE EMISIONES ---
+    // Gráfico 1: CO2
+    var chartCO2 = null;
+    var dataCO2 = null;
+    
+    // Gráfico 2: Generación
+    var chartGen = null;
+    var dataGen = null;
+
+    var datosCargadosEmis = false;
+
+    // 1. FUNCIÓN DE CARGA (Llama a las 2 APIs)
+    function cargarDatosEmisiones() {
+        // Fechas fijas según tu ejemplo (puedes hacerlas dinámicas luego)
+        var start = "2024-08-01 00:00:00";
+        var end = "2024-08-08 23:59:00";
+        var params = `?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
+
+        // URLs
+        var urlCO2 = `${API_BASE}/emisiones_medias_horaria${params}`;
+        var urlGen = `${API_BASE}/gen_real_horaria${params}`;
+
+       
+
+        // Llamamos a las dos APIs en paralelo
+        Promise.all([
+            fetch(urlCO2).then(r => r.json()),
+            fetch(urlGen).then(r => r.json())
+        ])
+        .then(([respCO2, respGen]) => {
+            datosCargadosEmis = true;
+            
+            // Dibujamos el de CO2 (Arriba)
+            inicializarGrafico(
+                'canvasEmisCO2', 'placeholder-co2', 'chart-box-co2', 'zoom-container-co2', 'sliderEmisCO2',
+                respCO2, 
+                '#5d4037', // Color Café/Gris oscuro para CO2
+                'chartCO2', // Referencia variable global (como string para logica interna)
+                'tCO₂'
+            );
+
+             // Carlos
+            inicio_tag = document.getElementById('inicio-tag-em');
+            inicio_tag.innerHTML = respCO2.date[0].substring(0,10)
+            fin_tag = document.getElementById('fin-tag-em');
+            tam = respCO2.date.length
+            fin_tag.innerHTML = respCO2.date[tam - 1].substring(0,10)
+
+            // Dibujamos el de Generación (Abajo)
+            inicializarGrafico(
+                'canvasGenReal', 'placeholder-gen', 'chart-box-gen', 'zoom-container-gen', 'sliderGenReal',
+                respGen, 
+                '#2e7d32', // Color Verde para Generación
+                'chartGen',
+                'MW'
+            );
+            inicio_tag = document.getElementById('inicio-tag-ge');
+            inicio_tag.innerHTML = respGen.date[0].substring(0,10)
+            fin_tag = document.getElementById('fin-tag-ge');
+            tam = respGen.date.length
+            fin_tag.innerHTML = respGen.date[tam - 1].substring(0,10)
+        })
+        .catch(err => {
+            console.error("Error cargando datos emisiones:", err);
+            document.getElementById('placeholder-co2').innerHTML = "<p style='color:red'>Error de conexión</p>";
+            document.getElementById('placeholder-gen').innerHTML = "<p style='color:red'>Error de conexión</p>";
+        });
+    }
+
+    // 2. FUNCIÓN GENÉRICA PARA DIBUJAR (Reutilizable para ambos)
+    function inicializarGrafico(canvasId, placeId, boxId, zoomId, sliderId, dataApi, colorLinea, chartVarName, unidadDefault) {
+        
+        // Mostrar contenedores
+        document.getElementById(placeId).style.display = 'none';
+        document.getElementById(boxId).style.display = 'block';
+        document.getElementById(zoomId).style.display = 'flex';
+
+        // --- DETECCIÓN INTELIGENTE DE DATOS ---
+        // Buscamos la llave que tiene los valores numéricos (no es 'date' ni 'name')
+        var valueKey = Object.keys(dataApi).find(k => Array.isArray(dataApi[k]) && k !== 'date');
+        var valores = dataApi[valueKey];
+        var fechas = dataApi.date;
+        var nombreSerie = dataApi.name || "Datos";
+
+        // Preparamos datos para Chart.js
+        var datosProcesados = fechas.map((f, i) => ({
+            x: new Date(f).getTime(),
+            y: valores[i]
+        }));
+
+        // Guardamos en variable global correspondiente para el zoom
+        if (chartVarName === 'chartCO2') dataCO2 = datosProcesados;
+        if (chartVarName === 'chartGen') dataGen = datosProcesados;
+
+        var ctx = document.getElementById(canvasId).getContext('2d');
+        
+        // Destruir previo si existe
+        if (chartVarName === 'chartCO2' && chartCO2) chartCO2.destroy();
+        if (chartVarName === 'chartGen' && chartGen) chartGen.destroy();
+
+        // Calcular techo eje Y (+20%)
+        var maxVal = Math.max(...valores);
+        var techoY = Math.ceil(maxVal * 1.2);
+
+        // Crear Gráfico
+        var newChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                datasets: [{
+                    label: nombreSerie,
+                    data: datosProcesados,
+                    borderColor: colorLinea,
+                    backgroundColor: colorLinea + '1A', // 10% opacidad (hex code hack)
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    pointHoverRadius: 4,
+                    fill: true,
+                    tension: 0.2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: { duration: 600, easing: 'easeOutQuart' },
+                interaction: { mode: 'nearest', axis: 'x', intersect: false },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                        titleColor: '#333', bodyColor: '#333', borderColor: '#ccc', borderWidth: 1,
+                        callbacks: {
+                            title: function(c) {
+                                const d = new Date(c[0].parsed.x);
+                                return d.toLocaleString('es-CL', { month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit'});
+                            },
+                            label: function(c) {
+                                return ` ${c.parsed.y.toLocaleString('es-CL')} ${unidadDefault}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: { displayFormats: { hour: 'HH:mm', day: 'd MMM' } },
+                        grid: { display: false, drawBorder: false },
+                        ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 6, color: '#999' }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        max: techoY,
+                        grid: { color: '#f5f5f5' },
+                        ticks: { color: '#999', maxTicksLimit: 5 }
+                    }
+                }
+            }
+        });
+
+        // Asignar a variable global
+        if (chartVarName === 'chartCO2') chartCO2 = newChart;
+        if (chartVarName === 'chartGen') chartGen = newChart;
+
+        // Configurar Slider
+        var slider = document.getElementById(sliderId);
+        slider.value = 100;
+        slider.oninput = function() { 
+            aplicarZoomGenerico(this.value, chartVarName); 
+        };
+        
+        // Zoom inicial
+        aplicarZoomGenerico(100, chartVarName);
+    }
+
+    // 3. LÓGICA DE ZOOM COMPARTIDA
+    function aplicarZoomGenerico(valorSlider, chartVarName) {
+        var chart, dataFull;
+        
+        if (chartVarName === 'chartCO2') { chart = chartCO2; dataFull = dataCO2; }
+        else { chart = chartGen; dataFull = dataGen; }
+
+        if (!chart || !dataFull || dataFull.length === 0) return;
+
+        var total = dataFull.length;
+        var ultimo = dataFull[total - 1];
+        var fechaFin = ultimo.x;
+
+        // Lógica de Zoom: 100% = 24h, 0% = Total disponible (aprox 1 semana en tu caso)
+        // Calculamos rango total en horas de los datos disponibles
+        var rangoTotalHoras = (fechaFin - dataFull[0].x) / 36e5; 
+        
+        // Interpolación lineal
+        var horasVer = 24 + (rangoTotalHoras - 24) * ((100 - valorSlider) / 100);
+        var fechaInicio = fechaFin - (horasVer * 36e5);
+
+        chart.options.scales.x.min = fechaInicio;
+        chart.options.scales.x.max = fechaFin;
+
+        // Ajuste etiquetas
+        var timeScale = chart.options.scales.x.time;
+        if (horasVer <= 48) {
+            timeScale.unit = 'hour'; 
+        } else {
+            timeScale.unit = 'day'; 
+        }
+
+        chart.update();
+    }
+    // Forzamos la carga inmediata de los datos nacionales
+    console.log("Iniciando carga automática de emisiones...");
+    cargarDatosEmisiones(); 
+
+</script>
 </script>
 </body>
 </html>
