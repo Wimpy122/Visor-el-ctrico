@@ -174,10 +174,10 @@
             <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
 
             <div class="chart-section">
-                <h4 id="chart-title">Costo Marginal (Histórico)</h4>
+                <h4 id="chart-title">Costo Marginal</h4>
     
                 <div id="zoom-container" style="display:none; align-items: center; margin-bottom: 10px; font-size: 0.8em; color: #666;">
-                    <span style="margin-right: 10px;">Mensual</span>
+                    <span style="margin-right: 10px;">Histórico</span>
                     <input type="range" id="timeSlider" min="0" max="100" value="100" style="flex: 1; cursor: pointer;">
                     <span style="margin-left: 10px;">Hora</span>
                 </div>
@@ -458,47 +458,53 @@
 
         // 4. Iniciar Slider
         var slider = document.getElementById('timeSlider');
-        slider.value = 100; 
+        slider.value = 0; 
         slider.oninput = function() { aplicarZoom(this.value); };
-        aplicarZoom(100);
+        aplicarZoom(0);
     }
 
-    // --- LÓGICA DEL ZOOM (Ajustada para cambiar formato de etiquetas) ---
+    // --- LÓGICA DEL ZOOM (Dinámica: De 24h a Total Histórico) ---
     function aplicarZoom(valorSlider) {
         // Validación de seguridad
         if (!graficoActual || !datosCompletosAPI || datosCompletosAPI.length === 0) return;
 
-        // 1. Obtener la fecha del ÚLTIMO dato disponible (el más reciente)
+        // 1. Obtener fechas extremas de tus datos reales
         var ultimoPunto = datosCompletosAPI[datosCompletosAPI.length - 1];
-        var fechaFin = ultimoPunto.x; // Timestamp del final
+        var primerPunto = datosCompletosAPI[0];
+        
+        var fechaFin = ultimoPunto.x;          // Fecha más reciente
+        var fechaInicioHist = primerPunto.x;   // Fecha más antigua
 
-        // 2. Calcular cuántas HORAS queremos ver hacia atrás según el slider
-        // Si slider es 100 (Derecha) -> 24 horas
-        // Si slider es 0   (Izquierda) -> 720 horas (30 días)
-        // Usamos una interpolación lineal simple
-        var horasAVisualizar = 24 + (720 - 24) * ((100 - valorSlider) / 100);
+        // 2. Calcular el rango total disponible en horas (Diferencia entre fin e inicio)
+        var totalHorasDisponibles = (fechaFin - fechaInicioHist) / (1000 * 60 * 60);
 
-        // 3. Calcular la fecha de inicio restando esas horas a la fecha final
-        // (horas * 60 min * 60 seg * 1000 ms)
-        var fechaInicio = fechaFin - (horasAVisualizar * 60 * 60 * 1000);
+        // 3. Calcular cuántas horas queremos ver según la posición del slider
+        // Si slider es 100 (Derecha) -> Vemos solo 24 horas
+        // Si slider es 0   (Izquierda) -> Vemos TODO el historial (totalHorasDisponibles)
+        var horasAVisualizar = 24 + (totalHorasDisponibles - 24) * ((100 - valorSlider) / 100);
 
-        // 4. Aplicar el rango al gráfico (Zoom suave)
-        graficoActual.options.scales.x.min = fechaInicio;
+        // 4. Calcular la fecha de inicio de la ventana de visualización
+        var fechaInicioVentana = fechaFin - (horasAVisualizar * 60 * 60 * 1000);
+
+        // 5. Aplicar el rango al gráfico
+        graficoActual.options.scales.x.min = fechaInicioVentana;
         graficoActual.options.scales.x.max = fechaFin;
 
-        // 5. Ajustar etiquetas (Estilo Electricity Maps)
+        // 6. Ajustar etiquetas dinámicamente según el zoom
         var timeScale = graficoActual.options.scales.x.time;
-
+        
         if (horasAVisualizar <= 48) { 
-            // Si vemos menos de 2 días -> MODO HORA
-            // Ej: 14:00, 15:00...
+            // Zoom muy cerca (menos de 2 días) -> Muestra HORAS
             timeScale.unit = 'hour';
             timeScale.displayFormats.hour = 'HH:mm'; 
-        } else {
-            // Si vemos más de 2 días -> MODO DÍA
-            // Ej: 13 Ene, 14 Ene...
+        } else if (horasAVisualizar <= 2000) { 
+            // Zoom medio (menos de ~3 meses) -> Muestra DÍAS
             timeScale.unit = 'day';
             timeScale.displayFormats.day = 'd MMM'; 
+        } else { 
+            // Zoom lejos (más de 3 meses) -> Muestra MESES
+            timeScale.unit = 'month';
+            timeScale.displayFormats.month = 'MMM yyyy';
         }
 
         graficoActual.update();
