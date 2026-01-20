@@ -572,42 +572,35 @@
         });
     }
 
-    // 2. FUNCIÓN GENÉRICA PARA DIBUJAR (Reutilizable para ambos)
+    // 2. FUNCIÓN GENÉRICA PARA DIBUJAR (Títulos compactos)
     function inicializarGrafico(canvasId, placeId, boxId, zoomId, sliderId, dataApi, colorLinea, chartVarName, unidadDefault) {
         
-        // Mostrar contenedores
         document.getElementById(placeId).style.display = 'none';
         document.getElementById(boxId).style.display = 'block';
         document.getElementById(zoomId).style.display = 'flex';
 
-        // --- DETECCIÓN INTELIGENTE DE DATOS ---
-        // Buscamos la llave que tiene los valores numéricos (no es 'date' ni 'name')
+        // --- DETECCIÓN DE DATOS ---
         var valueKey = Object.keys(dataApi).find(k => Array.isArray(dataApi[k]) && k !== 'date');
         var valores = dataApi[valueKey];
         var fechas = dataApi.date;
         var nombreSerie = dataApi.name || "Datos";
 
-        // Preparamos datos para Chart.js
         var datosProcesados = fechas.map((f, i) => ({
             x: new Date(f).getTime(),
             y: valores[i]
         }));
 
-        // Guardamos en variable global correspondiente para el zoom
         if (chartVarName === 'chartCO2') dataCO2 = datosProcesados;
         if (chartVarName === 'chartGen') dataGen = datosProcesados;
 
         var ctx = document.getElementById(canvasId).getContext('2d');
         
-        // Destruir previo si existe
         if (chartVarName === 'chartCO2' && chartCO2) chartCO2.destroy();
         if (chartVarName === 'chartGen' && chartGen) chartGen.destroy();
 
-        // Calcular techo eje Y (+20%)
         var maxVal = Math.max(...valores);
         var techoY = Math.ceil(maxVal * 1.2);
 
-        // Crear Gráfico
         var newChart = new Chart(ctx, {
             type: 'line',
             data: {
@@ -615,7 +608,7 @@
                     label: nombreSerie,
                     data: datosProcesados,
                     borderColor: colorLinea,
-                    backgroundColor: colorLinea + '1A', // 10% opacidad (hex code hack)
+                    backgroundColor: colorLinea + '1A', 
                     borderWidth: 2,
                     pointRadius: 0,
                     pointHoverRadius: 4,
@@ -626,6 +619,10 @@
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
+                // Layout ajustado para aprovechar espacio
+                layout: {
+                    padding: { left: 0, right: 10, top: 0, bottom: 0 }
+                },
                 animation: { duration: 600, easing: 'easeOutQuart' },
                 interaction: { mode: 'nearest', axis: 'x', intersect: false },
                 plugins: {
@@ -649,30 +646,61 @@
                         type: 'time',
                         time: { displayFormats: { hour: 'HH:mm', day: 'd MMM' } },
                         grid: { display: false, drawBorder: false },
-                        ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 6, color: '#999' }
+                        
+                        // Ticks pequeños
+                        ticks: { 
+                            maxRotation: 0, 
+                            autoSkip: true, 
+                            maxTicksLimit: 6, 
+                            color: '#999', 
+                            font: { size: 9 }, // Fuente pequeña
+                            padding: 2         // Pegado a la línea
+                        },
+                        
+                        // --- TITULO EJE X (Compacto) ---
+                        title: { 
+                            display: true,
+                            text: 'Fecha/Hora',
+                            color: '#aaa',
+                            font: { size: 10 }, // Muy discreto
+                            padding: { top: 2, bottom: 0 } // Casi sin margen
+                        }
                     },
                     y: {
                         beginAtZero: true,
                         max: techoY,
-                        grid: { color: '#f5f5f5' },
-                        ticks: { color: '#999', maxTicksLimit: 5 }
+                        grid: { color: '#f5f5f5', drawBorder: false },
+                        
+                        // Ticks pegados al eje
+                        ticks: { 
+                            color: '#999', 
+                            maxTicksLimit: 5, 
+                            font: { size: 9 },
+                            padding: 2  // Reduce el espacio entre el número y el gráfico
+                        },
+
+                        // --- TITULO EJE Y (Compacto) ---
+                        title: { 
+                            display: true,
+                            text: unidadDefault, // tCO2 o MW
+                            color: '#aaa',
+                            font: { size: 10, weight: 'bold' }, // Fuente pequeña
+                            padding: 0 // <--- ESTO ES CLAVE: Quita el "aire" extra alrededor del título
+                        }
                     }
                 }
             }
         });
 
-        // Asignar a variable global
         if (chartVarName === 'chartCO2') chartCO2 = newChart;
         if (chartVarName === 'chartGen') chartGen = newChart;
 
-        // Configurar Slider
         var slider = document.getElementById(sliderId);
         slider.value = 100;
         slider.oninput = function() { 
             aplicarZoomGenerico(this.value, chartVarName); 
         };
         
-        // Zoom inicial
         aplicarZoomGenerico(100, chartVarName);
     }
 
