@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Energía Chile - PRUEBA ECHARTS</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+
+    <style>
+    :root {
+        --primary-green: #2e7d32;
+        --bg-light: #f4f4f4;
+        --text-dark: #333;
+    }
+
+    body { margin: 0; display: flex; height: 100vh; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: var(--text-dark); }
+    
+    /* SIDEBAR */
+    #sidebar { 
+        width: 400px; 
+        background: white; 
+        border-right: 1px solid #ddd; 
+        display: flex; 
+        flex-direction: column;
+        box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+        z-index: 1000;
+    }
+
+    /* HEADER */
+    .sidebar-header {
+        padding: 15px 20px;
+        display: flex;
+        align-items: center;
+        border-bottom: 1px solid #eee;
+    }
+    .header-title { font-weight: bold; font-size: 1.1em; flex: 1; }
+
+    /* CONTENIDO CON SCROLL */
+    .sidebar-content {
+        padding: 20px;
+        overflow-y: auto;
+        flex: 1;
+    }
+
+    /* TOGGLE (Interruptor) */
+    .toggle-container {
+        background-color: #eee;
+        border-radius: 20px;
+        padding: 4px;
+        display: flex;
+        margin-bottom: 25px;
+    }
+    .toggle-btn {
+        flex: 1;
+        border: none;
+        background: transparent;
+        padding: 6px;
+        border-radius: 16px;
+        font-weight: 600;
+        font-size: 0.9em;
+        color: #666;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .toggle-btn.active {
+        background-color: white;
+        color: var(--primary-green);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    /* RESUMEN (LOS 3 CÍRCULOS) */
+    .summary-stats {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 30px;
+        text-align: center;
+    }
+    .stat-item { flex: 1; display: flex; flex-direction: column; align-items: center; }
+    
+    .circle-filled {
+        width: 60px; height: 60px;
+        background-color: #8bc34a;
+        border-radius: 50%;
+        display: flex; justify-content: center; align-items: center;
+        flex-direction: column;
+        color: #1a4d1a;
+        font-weight: bold;
+        margin-bottom: 8px;
+    }
+    
+    .circle-border {
+        width: 54px; height: 54px;
+        border: 3px solid #8bc34a;
+        border-radius: 50%;
+        display: flex; justify-content: center; align-items: center;
+        font-weight: bold;
+        color: #333;
+        margin-bottom: 8px;
+    }
+    
+    .stat-label { font-size: 0.75em; color: #666; line-height: 1.2; max-width: 80px; }
+    .unit { font-size: 0.7em; font-weight: normal; }
+
+    /* GRÁFICO - CONTENEDORES */
+    .chart-section h4 { margin: 0 0 10px 0; font-size: 1em; color: #333; }
+    
+    /* IMPORTANTE: ECharts necesita un DIV con altura explícita */
+    .chart-wrapper { 
+        height: 380px; /* Un poco más alto para evitar cortes */
+        width: 100%; 
+        position: relative; 
+        margin-bottom: 20px;
+    }
+
+    /* MAPA */
+    #map { flex: 1; background: #aadaff; }
+    
+    /* PESTAÑAS */
+    .tab-content { display: none; }
+    .tab-content.active { display: block; animation: fadeIn 0.3s; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <div class="sidebar-header">
+        <div class="header-title" id="header-title-text" style="display: flex; align-items: center;">
+            <img src="https://cdn-icons-png.flaticon.com/512/197/197586.png" 
+                 alt="Chile Flag" 
+                 style="width: 24px; height: 24px; margin-right: 10px; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            Sistema Eléctrico Nacional
+        </div>
+    </div>
+
+    <div class="sidebar-content">
+        <div class="toggle-container">
+            <button id="btn-elec" class="toggle-btn active" onclick="cambiarPestana('elec')">Electricidad</button>
+            <button id="btn-emis" class="toggle-btn" onclick="cambiarPestana('emis')">Emisiones</button>
+        </div>
+
+        <div id="view-elec" class="tab-content active">
+            
+            <div class="summary-stats">
+                <div class="stat-item">
+                    <div class="circle-filled"><span>--</span><span class="unit">gCO₂</span></div>
+                    <span class="stat-label">Intensidad</span>
+                </div>
+                <div class="stat-item">
+                    <div class="circle-border">--%</div>
+                    <span class="stat-label">Baja emisión</span>
+                </div>
+                <div class="stat-item">
+                    <div class="circle-border" style="border-color: #009688;">--%</div>
+                    <span class="stat-label">Renovables</span>
+                </div>
+            </div>
+
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+
+            <div class="chart-section">
+                <h4 id="chart-title">Costo Marginal (Histórico)</h4>
+    
+                <div id="elec-placeholder" style="text-align: center; padding: 40px; color: #999;">
+                    <p>Selecciona una subestación en el mapa</p>
+                </div>
+                
+                <div id="chartCMg" class="chart-wrapper" style="display: none;"></div>
+                
+                <div id="elec-details" style="text-align: right; font-size: 0.8em; color: #888; margin-top: 5px;"></div>
+            </div>
+
+            <div style="margin-top:20px; color:#aaa; text-align:center; font-size:0.8em;">
+                <div class="tech-list">
+                    <div style="font-weight: bold; margin-bottom: 10px; font-size: 0.85em; color: #888;">CAPACIDAD INSTALADA (Ejemplo)</div>
+                    <div class="tech-item"><span class="tech-icon">☀️</span> <span class="tech-name">Solar</span> <span class="tech-val">--</span></div>
+                    <div class="tech-item"><span class="tech-icon">🌬️</span> <span class="tech-name">Eólica</span> <span class="tech-val">--</span></div>
+                    <div class="tech-item"><span class="tech-icon">💧</span> <span class="tech-name">Hidroeléctrica</span> <span class="tech-val">--</span></div>
+                    <div class="tech-item"><span class="tech-icon">🔥</span> <span class="tech-name">Térmica</span> <span class="tech-val">--</span></div>
+                </div>
+            </div>
+
+        </div>
+
+        <div id="view-emis" class="tab-content">
+            
+            <div class="chart-section">
+                <h4 style="display:flex; align-items:center;">
+                    <span style="font-size:1.2em; margin-right:8px;">🏭</span> 
+                    <span id="title-emis-co2">Emisiones Totales (tCO₂)</span>
+                </h4>
+                
+                <div id="placeholder-co2" style="text-align: center; padding: 30px; color: #999;">
+                    <p>Cargando emisiones...</p>
+                </div>
+                
+                <div id="chartEmisCO2" class="chart-wrapper" style="display: none;"></div>
+            </div>
+
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 30px 0;">
+
+            <div class="chart-section">
+                <h4 style="display:flex; align-items:center;">
+                    <span style="font-size:1.2em; margin-right:8px;">⚡</span> 
+                    <span id="title-gen-real">Generación Real (MW)</span>
+                </h4>
+
+                <div id="placeholder-gen" style="text-align: center; padding: 30px; color: #999;">
+                    <p>Cargando generación...</p>
+                </div>
+                
+                <div id="chartGenReal" class="chart-wrapper" style="display: none;"></div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+<script>
+    // ---------------------------------------------------------
+    // 1. CONFIGURACIÓN DEL MAPA (Igual que antes)
+    // ---------------------------------------------------------
+    var capaClaro = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution: '©CartoDB' });
+    var capaSatelite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: '©Esri' });
+
+    var limitesChile = [[-60.0, -85.0], [-15.0, -60.0]];
+
+    var map = L.map('map', {
+        center: [-33.45, -70.66], 
+        zoom: 8,
+        minZoom: 5,
+        maxBounds: limitesChile,
+        maxBoundsViscosity: 1.0,
+        layers: [capaSatelite] 
+    });
+
+    var baseMaps = { "Mapa Claro": capaClaro, "Satélite": capaSatelite };
+    L.control.layers(baseMaps).addTo(map);
+
+    const API_BASE = "http://186.64.120.248:8000/api/v1";
+    var todosLosMarcadores = [];
+
+    // ---------------------------------------------------------
+    // 2. LOGICA VISUAL DEL MAPA
+    // ---------------------------------------------------------
+    var rutaIcono = '/static/img/iconos_energ_2.svg'; // Asegúrate de que la ruta sea correcta
+    
+    var iconMini = L.icon({ iconUrl: rutaIcono, iconSize: [5, 8], iconAnchor: [2, 8] });
+    var iconMedio = L.icon({ iconUrl: rutaIcono, iconSize: [12, 20], iconAnchor: [6, 20], popupAnchor: [1, -15] });
+    var iconNormal = L.icon({ iconUrl: rutaIcono, iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34] });
+
+    fetch(`${API_BASE}/bus`)
+        .then(response => response.json())
+        .then(listaSubestaciones => {
+            listaSubestaciones.forEach(bus => {
+                if (bus.lat && bus.lon) {
+                    var marker = L.marker([bus.lat, bus.lon], { icon: iconMini }).addTo(map);
+                    marker.bindTooltip(bus.nombre);
+                    marker.on('click', () => { cargarDatosCMg(bus.id, bus.nombre); });
+                    todosLosMarcadores.push(marker);
+                }
+            });
+            actualizarTamanoMarcadores();
+        })
+        .catch(err => console.error("Error buses:", err));
+
+    map.on('zoomend', actualizarTamanoMarcadores);
+
+    function actualizarTamanoMarcadores() {
+        var zoom = map.getZoom();
+        var icon = zoom < 6 ? iconMini : (zoom < 10 ? iconMedio : iconNormal);
+        todosLosMarcadores.forEach(m => m.setIcon(icon));
+    }
+
+    // ---------------------------------------------------------
+    // LOGICA DE PESTAÑAS Y RESIZE DE ECHARTS
+    // ---------------------------------------------------------
+    function cambiarPestana(tabName) {
+        document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.getElementById('btn-' + tabName).classList.add('active');
+        document.getElementById('view-' + tabName).classList.add('active');
+        
+        // ECharts no renderiza bien en contenedores ocultos. 
+        // Cuando cambiamos de pestaña, forzamos un 'resize' para que se ajuste.
+        setTimeout(() => {
+            if(tabName === 'emis') {
+                if(echartCO2) echartCO2.resize();
+                if(echartGen) echartGen.resize();
+            } else {
+                if(echartCMg) echartCMg.resize();
+            }
+        }, 50);
+    }
+
+    // =========================================================
+    // 3. ECHARTS - LÓGICA DE GRÁFICOS
+    // =========================================================
+
+    // Variables globales para las instancias de ECharts
+    var echartCMg = null;
+    var echartCO2 = null;
+    var echartGen = null;
+
+    // --- CARGAR DATOS COSTO MARGINAL ---
+    function cargarDatosCMg(id, nombreSubestacion) {
+        document.getElementById('header-title-text').innerText = nombreSubestacion;
+        document.getElementById('elec-details').innerHTML = '<small>Cargando datos...</small>';
+
+        fetch(`${API_BASE}/cmg?id=${id}`)
+            .then(res => res.json())
+            .then(data => {
+                // ECharts prefiere formato Array: [[timestamp, valor], [timestamp, valor]]
+                var datosECharts = data.date.map((fecha, i) => {
+                    return [new Date(fecha).getTime(), data.cmg[i]];
+                });
+
+                document.getElementById('elec-placeholder').style.display = 'none';
+                document.getElementById('chartCMg').style.display = 'block';
+                document.getElementById('elec-details').innerHTML = `<small>Unidad: ${data.y_unit}</small>`;
+
+                // Renderizamos
+                renderEChart('chartCMg', datosECharts, 'Costo Marginal', '#2e7d32', 'USD/MWh', 'echartCMg');
+            })
+            .catch(err => console.error(err));
+    }
+
+    // --- CARGAR DATOS EMISIONES (NACIONAL) ---
+    function cargarDatosEmisiones() {
+        var start = "2024-08-01 00:00:00";
+        var end = "2024-08-08 23:59:00";
+        var params = `?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
+
+        Promise.all([
+            fetch(`${API_BASE}/emisiones_medias_horaria${params}`).then(r => r.json()),
+            fetch(`${API_BASE}/gen_real_horaria${params}`).then(r => r.json())
+        ]).then(([respCO2, respGen]) => {
+            
+            // Función auxiliar
+            const parseData = (apiResponse) => {
+                var key = Object.keys(apiResponse).find(k => Array.isArray(apiResponse[k]) && k !== 'date');
+                return apiResponse.date.map((f, i) => [new Date(f).getTime(), apiResponse[key][i]]);
+            };
+
+            var dataCO2 = parseData(respCO2);
+            var dataGen = parseData(respGen);
+
+            // 1. CO2
+            document.getElementById('placeholder-co2').style.display = 'none';
+            document.getElementById('chartEmisCO2').style.display = 'block';
+            renderEChart('chartEmisCO2', dataCO2, 'Emisiones', '#5d4037', 'tCO₂', 'echartCO2');
+
+            // 2. Generación
+            document.getElementById('placeholder-gen').style.display = 'none';
+            document.getElementById('chartGenReal').style.display = 'block';
+            renderEChart('chartGenReal', dataGen, 'Generación', '#2e7d32', 'MW', 'echartGen');
+
+        }).catch(err => console.error("Error emisiones", err));
+    }
+
+
+    // ---------------------------------------------------------
+    // FUNCIÓN PRINCIPAL DE ECHARTS (GENÉRICA)
+    // ---------------------------------------------------------
+    function renderEChart(domId, data, seriesName, color, unit, instanceVarName) {
+        var dom = document.getElementById(domId);
+        
+        var myChart = echarts.getInstanceByDom(dom);
+        if (myChart) { myChart.dispose(); }
+
+        myChart = echarts.init(dom);
+
+        if (instanceVarName === 'echartCMg') echartCMg = myChart;
+        if (instanceVarName === 'echartCO2') echartCO2 = myChart;
+        if (instanceVarName === 'echartGen') echartGen = myChart;
+
+        var option = {
+            tooltip: {
+                trigger: 'axis',
+                formatter: function (params) {
+                    var date = new Date(params[0].value[0]);
+                    var val = params[0].value[1].toLocaleString('es-CL');
+                    var dateStr = date.toLocaleDateString('es-CL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+                    return `<b>${dateStr}</b><br/>${params[0].marker} ${val} ${unit}`;
+                }
+            },
+            grid: {
+                left: '10',     
+                right: '15',    
+                top: '20',
+                // Aumentamos a 95px para tener espacio de sobra para el slider y fechas
+                bottom: '95',   
+                containLabel: true 
+            },
+            xAxis: {
+                type: 'time',
+                boundaryGap: false,
+                axisLabel: { 
+                    color: '#888', 
+                    fontSize: 10,
+                    hideOverlap: true, 
+                    margin: 15,
+                    formatter: {
+                        year: '{yyyy}',
+                        month: '{MMM}',
+                        day: '{d}/{MM}', 
+                        hour: '{HH}:{mm}', 
+                        minute: '{HH}:{mm}',
+                        none: '{d}/{MM} {HH}:{mm}'
+                    }
+                },
+                axisLine: { show: false },
+                axisTick: { show: false },
+                minInterval: 3600 * 1000 
+            },
+            yAxis: {
+                type: 'value',
+                axisLabel: { color: '#999', fontSize: 10 },
+                splitLine: { lineStyle: { color: '#f0f0f0' } }
+            },
+            dataZoom: [
+                {
+                    type: 'slider',
+                    xAxisIndex: 0,
+                    // --- FIX CLAVE: 'weakFilter' ---
+                    // Permite dibujar líneas aunque los puntos estén fuera del zoom actual
+                    filterMode: 'weakFilter', 
+                    
+                    height: 25,     
+                    bottom: 20,     // Lo subimos un poco más (pixel 20 desde abajo)
+                    start: 0, 
+                    end: 100,
+                    handleSize: '100%',
+                    borderColor: 'transparent',
+                    backgroundColor: '#f9f9f9',
+                    fillerColor: 'rgba(46, 125, 50, 0.1)', 
+                    showDetail: false, 
+                    handleStyle: {
+                        color: '#fff',
+                        shadowBlur: 3,
+                        shadowColor: 'rgba(0, 0, 0, 0.6)',
+                        borderColor: '#ccc'
+                    }
+                },
+                {
+                    type: 'inside',
+                    xAxisIndex: 0,
+                    // También aplicamos weakFilter al zoom del mouse
+                    filterMode: 'weakFilter',
+                    zoomOnMouseWheel: true,
+                    moveOnMouseWheel: true
+                }
+            ],
+            series: [
+                {
+                    name: seriesName,
+                    type: 'line',
+                    data: data,
+                    symbol: 'none',
+                    smooth: 0.2,
+                    itemStyle: { color: color },
+                    areaStyle: {
+                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                            { offset: 0, color: color },
+                            { offset: 1, color: 'rgba(255, 255, 255, 0)' }
+                        ]),
+                        opacity: 0.3
+                    }
+                }
+            ]
+        };
+
+        myChart.setOption(option);
+    }
+
+    // Redimensionar gráficos si cambia el tamaño de la ventana
+    window.addEventListener('resize', function() {
+        if(echartCMg) echartCMg.resize();
+        if(echartCO2) echartCO2.resize();
+        if(echartGen) echartGen.resize();
+    });
+
+    // Iniciar carga automática
+    console.log("Cargando ECharts...");
+    cargarDatosEmisiones();
+
+</script>
+</body>
+</html>

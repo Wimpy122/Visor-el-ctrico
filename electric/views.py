@@ -28,3 +28,7 @@ def api_estado_actual(request):
 def vista_mapa(request):
     from django.shortcuts import render
     return render(request, 'index.html')
+
+def vista_mapa2(request):
+    from django.shortcuts import render
+    return render(request, 'index_echarts.html')
